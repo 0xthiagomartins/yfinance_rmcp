@@ -1,0 +1,13 @@
+[package]
+name = "yfinance-rmcp"
+version = "0.1.0"
+edition = "2021"
+description = "MCP server for Yahoo Finance data (historical prices, quote, search)"
+
+[dependencies]
+rmcp = { version = "0.17", features = ["server", "macros", "transport-io", "schemars"] }
+yahoo_finance_api = "4.1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "0.8"
