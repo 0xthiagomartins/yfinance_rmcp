@@ -1,9 +1,14 @@
 use rmcp::{
     handler::server::tool::ToolRouter,
-    model::{CallToolResult, Content, Parameters, ServerCapabilities, ServerHandler, ServerInfo},
+    handler::server::wrapper::Parameters,
+    model::{
+        CallToolResult, Content, Implementation, InitializeResult, ProtocolVersion,
+        ServerCapabilities,
+    },
     tool, tool_handler, tool_router,
     transport::io::stdio,
     ErrorData as McpError,
+    ServerHandler,
     ServiceExt,
 };
 use schemars::JsonSchema;
@@ -68,7 +73,7 @@ impl YahooFinanceHandler {
                 return Ok(CallToolResult::error(vec![Content::text(format!(
                     "Yahoo connector error: {}",
                     e
-                )]));
+                ))]));
             }
         };
         let response = match provider
@@ -80,16 +85,16 @@ impl YahooFinanceHandler {
                 return Ok(CallToolResult::error(vec![Content::text(format!(
                     "Failed to get quotes for {}: {}",
                     p.ticker, e
-                )]));
+                ))]));
             }
         };
         let quotes = match response.quotes() {
-            Some(q) => q,
-            None => {
+            Ok(q) => q,
+            Err(e) => {
                 return Ok(CallToolResult::error(vec![Content::text(format!(
-                    "No quote data for {}",
-                    p.ticker
-                )]));
+                    "No quote data for {}: {}",
+                    p.ticker, e
+                ))]));
             }
         };
         let records: Vec<serde_json::Value> = quotes
@@ -121,7 +126,7 @@ impl YahooFinanceHandler {
                 return Ok(CallToolResult::error(vec![Content::text(format!(
                     "Yahoo connector error: {}",
                     e
-                )]));
+                ))]));
             }
         };
         let response = match provider.get_latest_quotes(&ticker, "1d").await {
@@ -130,16 +135,16 @@ impl YahooFinanceHandler {
                 return Ok(CallToolResult::error(vec![Content::text(format!(
                     "Failed to get quote for {}: {}",
                     ticker, e
-                )]));
+                ))]));
             }
         };
         let quote = match response.last_quote() {
-            Some(q) => q,
-            None => {
+            Ok(q) => q,
+            Err(e) => {
                 return Ok(CallToolResult::error(vec![Content::text(format!(
-                    "No quote for {}",
-                    ticker
-                )]));
+                    "No quote for {}: {}",
+                    ticker, e
+                ))]));
             }
         };
         let json = serde_json::json!({
@@ -168,7 +173,7 @@ impl YahooFinanceHandler {
                 return Ok(CallToolResult::error(vec![Content::text(format!(
                     "Yahoo connector error: {}",
                     e
-                )]));
+                ))]));
             }
         };
         let response = match provider.search_ticker(&query).await {
@@ -177,7 +182,7 @@ impl YahooFinanceHandler {
                 return Ok(CallToolResult::error(vec![Content::text(format!(
                     "Search failed: {}",
                     e
-                )]));
+                ))]));
             }
         };
         let list: Vec<serde_json::Value> = response
@@ -200,15 +205,23 @@ impl YahooFinanceHandler {
 
 #[tool_handler]
 impl ServerHandler for YahooFinanceHandler {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            name: "yfinance_rmcp".into(),
-            version: Some("0.1.0".into()),
+    fn get_info(&self) -> InitializeResult {
+        InitializeResult {
+            protocol_version: ProtocolVersion::default(),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            server_info: Implementation {
+                name: "yfinance_rmcp".into(),
+                title: None,
+                version: "0.1.0".into(),
+                description: Some(
+                    "Yahoo Finance data collector. Tools: get_historical_stock_prices, get_stock_quote, search_ticker.".into(),
+                ),
+                icons: None,
+                website_url: None,
+            },
             instructions: Some(
                 "Yahoo Finance data collector. Tools: get_historical_stock_prices, get_stock_quote, search_ticker.".into(),
             ),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
         }
     }
 }
@@ -221,4 +234,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .inspect_err(|e| eprintln!("MCP error: {}", e))?;
     service.waiting().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_info_name_and_version() {
+        let handler = YahooFinanceHandler::new();
+        let info = handler.get_info();
+        assert_eq!(info.server_info.name, "yfinance_rmcp");
+        assert_eq!(info.server_info.version, "0.1.0");
+        assert!(info.instructions.is_some());
+    }
+
+    #[test]
+    fn server_info_capabilities_include_tools() {
+        let handler = YahooFinanceHandler::new();
+        let info = handler.get_info();
+        assert!(info.capabilities.tools.is_some());
+    }
+
+    #[test]
+    fn default_period_is_1mo() {
+        assert_eq!(default_period(), "1mo");
+    }
+
+    #[test]
+    fn default_interval_is_1d() {
+        assert_eq!(default_interval(), "1d");
+    }
 }
